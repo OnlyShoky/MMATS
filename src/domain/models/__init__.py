@@ -6,6 +6,7 @@ This package contains the core domain entities:
 - Order: Trade orders
 - Position: Open positions
 - MarketData: OHLCV and tick data
+- StrategyContext: Context passed to strategies
 """
 
 from src.domain.models.enums import (
@@ -23,6 +24,7 @@ from src.domain.models.signal import Signal
 from src.domain.models.order import Order
 from src.domain.models.position import Position
 from src.domain.models.market_data import OHLCV, Tick, MarketInfo
+from src.domain.models.strategy_context import StrategyContext, AccountState
 
 __all__ = [
     # Enums
@@ -42,4 +44,6 @@ __all__ = [
     "OHLCV",
     "Tick",
     "MarketInfo",
+    "StrategyContext",
+    "AccountState",
 ]
