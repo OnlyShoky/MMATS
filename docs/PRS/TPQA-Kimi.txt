@@ -1,0 +1,195 @@
+# QA / Test Plan  
+**Multi-Market Automated Trading System (MMATS)**  
+*PRS baseline: Claude AI v1.0 – 2025-12-08*  
+*Version:* 1.0  
+*Author:* Senior QA Engineer & Software Architect  
+*Date:* 2025-12-08  
+
+---
+
+## 1. Overview
+
+**Purpose**  
+Provide a disciplined, measurable and repeatable verification strategy that proves MMATS:  
+1. Satisfies every functional & non-functional requirement in the PRS.  
+2. Behaves identically across back-test, paper and live pipelines.  
+3. Never breaches stated risk limits or exposes capital to unintended loss.  
+
+**Scope**  
+All software artefacts developed inside the repository boundary:  
+core engine, adapters, strategy plug-ins, UI, CLI, Dev-Ops scripts, IaC.  
+*Excluded:* third-party exchange/broker test environments, OS, Docker engine, hardware.  
+
+**Objectives**  
+- ≥ 80 % unit-test coverage on core business logic (PRS §5.4).  
+- 100 % coverage of all risk rules and emergency stops.  
+- ≤ 1 % variance between back-test and paper-trade PnL on identical data.  
+- Zero false fills, zero un-authorised live orders, zero data loss under fault injection.  
+
+---
+
+## 2. Test Strategy
+
+| Level | Technique | % Effort | Goal |
+|-------|-----------|----------|------|
+| 1. Unit | pytest, unittest, hypothesis (property) | 45 % | Isolate defects at function/class level |
+| 2. Integration | pytest + Docker-Compose | 25 % | Adapter ↔ broker, strategy ↔ risk, multi-market orchestration |
+| 3. End-to-End (E2E) | pytest-bdd, Selenium, Playwright | 15 % | Whole pipeline fidelity, UI, emergency stops |
+| 4. Regression | automated nightly CI | 5 % | Detect breaking changes |
+| 5. Back-test Validation | statistical diff vs. manual calc | 5 % | No look-ahead, deterministic |
+| 6. Paper Trading Validation | parallel shadow run | 3 % | Latency, slippage, fill-rate realism |
+| 7. Risk & Safety | fault-injection (chaos) | 2 % | Breach prevention, kill-switch ≤ 1 s |
+
+---
+
+## 3. Test Items / Modules
+
+| # | Module | Key Quality Attributes |
+|---|--------|------------------------|
+| TI-01 | Model Interface (`IStrategy`) | Contract compliance, hot-reload crash isolation |
+| TI-02 | Core Engine / Orchestrator | Thread safety, signal ordering, event-loop latency |
+| TI-03 | Risk Manager | Rule coverage, veto enforcement, circuit-breaker timing |
+| TI-04 | Order Manager | Idempotency, order-state machine, cancel-on-disconnect |
+| TI-05 | Market Data Adapter | Normalisation accuracy, gap handling, failover |
+| TI-06 | Execution Adapter | Auth, rate-limit respect, nonce collision, fill mapping |
+| TI-07 | Back-testing Engine | Determinism, cost model, no forward bias |
+| TI-08 | Paper Trading Engine | FIFO matching, slippage model, latency ≤ 500 ms |
+| TI-09 | Position & Portfolio | Realised vs. unrealised PnL, currency conversion |
+| TI-10 | AI/LLM News Adapter (future) | Sentiment range [-1,1], timeout, poisoning |
+| TI-11 | UI / Dashboard | WebSocket refresh ≤ 1 s, emergency button always visible |
+| TI-12 | Security & Audit | Encrypted keys, append-only logs, role isolation |
+
+---
+
+## 4. Example Test Cases
+
+### 4.1 Unit Level
+
+| TC-ID | Module | PRS Trace | Objective | Input | Expected Output | Pass Criteria |
+|-------|--------|-----------|-----------|-------|-----------------|---------------|
+| UT-01 | `IStrategy` | §6.1 | Verify correct signal dataclass | `MarketData(close=100, …), AccountState(balance=1000, …)` | `TradeSignal(action=BUY, position_size=0.02, stop_loss=99, take_profit=102, confidence=0.8)` | All fields within 1 % tolerance, correct enum value |
+| UT-02 | RiskManager | §4.4-R2 | Reject trade exceeding daily loss | Daily loss limit = 5 %, current = -4.9 %, new trade risk = 1 % | `RiskDecision(approved=False, reason="DailyLossLimit")` | Approval flag == False |
+| UT-03 | ExecutionAdapter | §6.2 | Rate-limit throttle | 1201 calls in 60 s | 1200 pass, 1 delayed | 95-th percentile latency < 200 ms after retry |
+
+*Edge cases:* negative prices, null fields, NaN indicators, empty list, duplicated order ID.
+
+### 4.2 Integration Level
+
+| TC-ID | Modules | PRS Trace | Objective | Input | Expected Output | Pass Criteria |
+|-------|---------|-----------|-----------|-------|-----------------|---------------|
+| IT-01 | Engine → Risk → Order | §4.4-R1 | Full pipeline single strategy | 1 tick BTC, strategy emits BUY 0.1 BTC | Order object placed, position opened | Fill price within 0.5 % of signal price, commission logged |
+| IT-02 | Multi-Strategy Conflict | §4.1-S3 | Two strategies opposite signal same symbol | Strategy-A BUY, Strategy-B SELL concurrent | Configured resolution mode executed | Position side matches mode, audit log attributes strategy |
+| IT-03 | Data Adapter Failover | §5.2-NF-R3 | Primary feed disconnect | Binance WS disconnect > 5 s | Fallback to Coinbase feed, no data loss | Gap ≤ 1 s, indicator recalc continues |
+
+### 4.3 E2E / Scenario
+
+| TC-ID | Scenario | PRS Trace | Steps | Expected Result | Pass Criteria |
+|-------|----------|-----------|-------|-----------------|---------------|
+| E2E-01 | Back-test Determinism | §4.3-O3 | Run identical 2-year BTC back-test twice | Same Sharpe, same trade count (±1) | Δ Sharpe ≤ 0.01, Δ trades ≤ 1 % |
+| E2E-02 | Emergency Stop | §4.4-R4 | User clicks “Circuit Breaker” during 5 open positions | All pending orders cancelled, all positions market-closed within 1 s, trading halted | Positions flat, audit log contains EVENT=“EMERGENCY”, UI shows red banner |
+| E2E-03 | Paper ↔ Live Parity | §4.3-O4 | Run paper & live side-by-side for 1 h, same strategies | Identical signals, paper PnL within 2 % of live | Signal timestamp diff ≤ 100 ms, PnL diff ≤ 2 % |
+
+---
+
+## 5. Traceability Matrix (sample rows)
+
+| PRS Requirement | Module | Test Case IDs | Status |
+|-----------------|--------|---------------|--------|
+| §4.1-S2 Standardised strategy interface | `IStrategy` | UT-01, IT-01 | Planned |
+| §4.4-R2 Daily loss limit | RiskManager | UT-02, IT-04 | Planned |
+| §4.3-O3 Back-test engine | Backtest | E2E-01 | Planned |
+| §4.4-R4 Circuit breaker | RiskManager + UI | E2E-02 | Planned |
+| §5.1-NF-R1 Latency < 500 ms | Full pipeline | Perf-01 | Planned |
+
+---
+
+## 6. Test Data
+
+1. **Historical Market Data**  
+   - Crypto: Binance 1-min BTC-USDT, ETH-USDT 2020-01-01 → 2025-11-30 (≈ 2.6 M candles)  
+   - Forex: OANDA 1-hour EUR-USD, GBP-USD 2018 → 2025 (≈ 62 K candles)  
+   - Split: 70 % training, 30 % walk-forward, 5 % reserved for regression.
+
+2. **Simulated Live Feed**  
+   - Uses “historical replay” at real-time rate with 0-10 ms jitter to simulate WebSocket.  
+   - Injects synthetic gaps (5 s, 30 s) for failover tests.
+
+3. **Mock Broker APIs**  
+   - Python Flask apps mimicking Binance, OANDA: rate-limit 1200 req/min, fixed 0.1 % maker fee.  
+   - Returns deterministic fills: market order fills at bid/ask ± slippage model.
+
+4. **Portfolios**  
+   - Single-market: 1000 USDT cash, no positions.  
+   - Multi-market: 500 USDT, 500 EUR cash, long 0.02 BTC, short 0.1 lots EUR-USD.  
+   - Edge: near margin call (95 % leverage used).
+
+---
+
+## 7. Tools & Environment
+
+| Category | Tool | Purpose |
+|----------|------|---------|
+| Unit / Integration | pytest, pytest-cov, pytest-asyncio, hypothesis | Fast, parameterized, property-based |
+| Mock / Stub | pytest-mock, responses, aioresponses | Adapter isolation |
+| BDD E2E | pytest-bdd, Selenium (Python) | Readable scenarios, UI automation |
+| Performance | locust | 1000 ticks/s load, latency P95 |
+| Chaos | chaosiq, toxiproxy | Network delay, packet loss |
+| Static | mypy, bandit, safety | Type correctness, vuln scan |
+| Coverage | coverage.py, SonarQube | Enforce 80 % threshold |
+| CI | GitHub Actions | Parallel pipelines: unit, integration, E2E nightly |
+| Artifact | Docker-Compose | Spin up Postgres, Redis, mock brokers |
+| Logs | ELK stack (local) | Searchable trace, alerting |
+
+---
+
+## 8. Metrics & Reporting
+
+1. **Coverage Report** (per merge)  
+   - Statement, branch, mutation score.  
+   - Trend graph in PR comment.
+
+2. **Test Execution Summary** (daily)  
+   - Total: 1200 UT, 250 IT, 30 E2E.  
+   - Pass ≥ 98 %, Fail → Jira ticket auto-created.  
+   - Mean duration < 20 min on 4-core agent.
+
+3. **Risk QA Dashboard**  
+   - # of risk rules executed vs. breached.  
+   - Kill-switch response time (target ≤ 1 s).  
+   - Unauthorized live order attempts (must be 0).
+
+4. **Performance Delta**  
+   - Back-test vs. paper PnL difference ≤ 1 %.  
+   - Signal latency P95 vs. target (500 ms).
+
+---
+
+## 9. Risk & Contingency
+
+| Risk Area | Mitigation Test | Fallback |
+|-----------|----------------|----------|
+| Exchange sandbox unavailable | Record-playback adapter | Replay last 24 h captured feed |
+| Data corruption (ticks) | Checksum & gap detector | Auto-failover to secondary feed |
+| Strategy overload (CPU > 90 %) | Resource monitor | Shed low-priority strategies |
+| Secret leakage in logs | bandit + regex scan | Fail pipeline, rotate keys |
+| Over-fill due to race | Idempotency token in OrderManager | Reconcile positions, alert ops |
+
+---
+
+## 10. Approval & Maintenance
+
+- **Exit Criteria** signed by: QA Lead, Product Owner, Risk Officer.  
+- **Frequency**: Full plan review every release; incremental update on PRS change.  
+- **Versioning**: Git tag aligned with software releases.  
+- **Responsibility**: QA team owns plan; Dev team must supply unit tests ≥ 80 % coverage.  
+- **Sign-off Matrix** (example):
+
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
+| QA Lead | [Name] | 2025-12-08 | _________ |
+| Tech Lead | [Name] | 2025-12-08 | _________ |
+| Risk Officer | [Name] | 2025-12-08 | _________ |
+
+---
+
+**End of Test Plan**

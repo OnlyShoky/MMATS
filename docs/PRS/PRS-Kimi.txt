@@ -1,0 +1,302 @@
+Kimi PRS :
+
+# Product Requirements Specification (PRS)  
+**Multi-Market Automated Trading System – “Athena”**  
+Version 1.0 – 2025-12-08  
+Author: Senior Software Architect / FinTech PM  
+Distribution: Internal Development Team  
+
+---
+
+## 1 Executive Summary  
+Athena is a clean-architecture, algorithmic-trading orchestrator that simultaneously runs multiple quantitative models across Crypto, Forex, and (future) Equities markets.  
+It operates in Advisory (signal-only) or Operator (live-execution) mode, guarantees identical behaviour across backtest, paper, and live pipelines, and is designed for personal use (< 200 € initial capital) with a clear commercialisation path.  
+
+---
+
+## 2 Product Scope  
+
+### 2.1 In Scope  
+- Multi-market data ingestion (public & broker feeds)  
+- Pluggable strategy engine with standard I/O contract  
+- Unified backtesting / paper / live pipeline  
+- Real-time risk & capital management  
+- Modular broker/exchange adapters (REST & WebSocket)  
+- Local deployment with optional web dashboard  
+- Audit-grade logging & replay  
+
+### 2.2 Out of Scope (v1)  
+- Regulated custodian services  
+- HFT sub-microsecond optimisation  
+- Exchange colocation  
+- Native mobile app  
+
+---
+
+## 3 User Personas  
+1. **Quant Developer** – Codes new models, runs backtests.  
+2. **Risk Manager** – Monitors drawdown, adjusts limits.  
+3. **Operator** – Starts/stops models, performs manual overrides.  
+4. **System Admin** – Maintains deployment, rotates keys, audits logs.  
+
+---
+
+## 4 High-Level System Architecture (textual diagram)  
+
+```
+┌-------------------------┐
+│  External Data Sources  │  (Binance, Coinbase, OANDA, Alpaca, Finnhub…)
+└-----------┬-------------┘
+            │  REST / WebSocket / FIX
+┌-----------┴-------------┐
+│     Market Adapter      │  ← converts native schema → internal “MarketEvent”
+│   (Port – “DataFeed”)   │
+└-----------┬-------------┘
+            │  MarketEvent stream (Kafka / local ring-buffer)
+┌-----------┴-------------┐
+│   Strategy Agent Host   │  ← loads N model instances (plug-ins)
+│  (Hexagon – Core Logic) │
+└-----------┬-------------┘
+            │  OrderIntent (model-agnostic)
+┌-----------┴-------------┐
+│   Order Management      │  ← risk check, position sizing, routing
+│     System (OMS)        │
+└-----------┬-------------┘
+            │  BrokerOrder (proto)
+┌-----------┴-------------┐
+│   Broker Adapter        │  ← converts to broker API calls
+│  (Port – “Execution”)   │
+└-----------┬-------------┘
+            │  Fill / AccountEvent
+┌-----------┴-------------┐
+│   Portfolio & Risk      │  ← real-time NAV, margin, drawdown
+│       Engine            │
+└-----------┬-------------┘
+            │  Metrics / Logs / Alerts
+┌-----------┴-------------┐
+│   Dashboard / CLI / API │
+└-------------------------┘
+```
+
+**Central contracts (ports)**  
+- `MarketDataPort` – subscribe(), getSnapshot()  
+- `ExecutionPort` – sendOrder(), cancel(), modify()  
+- `AccountStatePort` – balances, positions, margin  
+- `ModelStrategyPort` – `run(inputs) -> Signal`  
+
+---
+
+## 5 Functional Requirements  
+
+| ID | Requirement Statement | Priority |
+|----|-----------------------|----------|
+| F1 | System shall ingest real-time tick, 1-min, and 1-h candles from at least two crypto exchanges and two Forex brokers. | MUST |
+| F2 | A new model written in Python shall be loadable at runtime via a zip containing `model.py` + `manifest.toml` without recompilation. | MUST |
+| F3 | Strategy outputs shall contain: action ∈ {BUY,SELL,HOLD}, qty (float), symbol, limit_px (optional), stop_loss, take_profit, time_in_force, meta(dict). | MUST |
+| F4 | Backtest module shall replay historical data with ≤ 1 ms event skew versus live run (same code path). | MUST |
+| F5 | Paper-trading mode shall use live data but route orders to a simulated matching engine that respects FIFO & price-slippage models. | MUST |
+| F6 | Risk module shall support global daily-loss limit, per-market limit, per-strategy limit, max open positions, max leverage. | MUST |
+| F7 | System shall perform emergency shutdown (flatten all positions & cancel orders) within 5 s of trigger. | MUST |
+| F8 | Operator UI shall display equity curve, open positions, pending orders, strategy logs, and allow manual close & pause. | SHOULD |
+| F9 | System shall export trade history as CSV + FIXML for tax reporting. | SHOULD |
+| F10 | News-AI connector shall accept JSON with sentiment ∈ [-1..1] and impact_horizon ∈ {1m,5m,1h} and adjust model confidence. | FUTURE |
+
+---
+
+## 6 Non-Functional Requirements  
+
+| ID | Requirement | Metric |
+|----|-------------|--------|
+| NF1 | Latency (model signal → order gateway) | ≤ 20 ms median (non-HFT) |
+| NF2 | Throughput | 5 k events / sec / core |
+| NF3 | Availability (live mode) | 99.5 % during market hours |
+| NF4 | Recovery time after crash | ≤ 30 s with state replay |
+| NF5 | Supported OS | Linux x64, macOS x64 & ARM |
+| NF6 | Resource usage | ≤ 2 GB RAM & 1 vCPU for 10 models |
+| NF7 | Extensibility | New market adapter ≤ 5 PD |
+| NF8 | Test coverage | ≥ 80 % unit, 100 % critical path |
+| NF9 | License | MIT for core, adapters per vendor |
+
+---
+
+## 7 API Abstraction Layers  
+
+### 7.1 DataFeed Adapter Interface (Python pseudo-code)  
+```python
+class DataFeedPort(ABC):
+    def subscribe(self, symbols: List[str], levels: List[str]) -> AsyncIterator[MarketEvent]: ...
+    def get_snapshot(self, symbol: str) -> OrderBook: ...
+```
+
+### 7.2 Execution Adapter Interface  
+```python
+class ExecutionPort(ABC):
+    def send_order(self, order: OrderIntent) -> OrderId: ...
+    def cancel_order(self, order_id: OrderId): ...
+    def stream_fills(self) -> AsyncIterator[FillEvent]: ...
+```
+
+### 7.3 Configuration DSL (YAML)  
+```yaml
+market:
+  type: crypto
+  feed: binance
+  execution: binance
+  symbols: [BTCUSDT, ETHUSDT]
+risk:
+  max_daily_loss: 5%
+  max_pos: 3
+  leverage: 2
+models:
+  - id: EMA_CROSS_15_60
+    file: ./models/ema_cross.py
+    params: {fast: 15, slow: 60}
+```
+
+---
+
+## 8 Model Interface Definition  
+
+Every model must implement:  
+```python
+class Strategy(ABC):
+    def on_init(self, ctx: Context) -> None: ...
+    def on_event(self, event: MarketEvent, account: AccountState) -> Signal: ...
+    def on_shutdown(self) -> Optional[Dict]: ...  # persist state
+```
+Context provides logger, parameter dict, and backtest flag.  
+
+---
+
+## 9 Market Adapter Design  
+
+- **Layered**: Transport → Normalisation → Normalised Cache → Port  
+- **Feature flags**: public/stream, authenticated, snapshot, rate-limit model  
+- **Auto-failover**: at least two redundant feeds per market; fallback to cached snapshot.  
+- **Rate-limit queue**: token-bucket per exchange rules; back-pressure propagated to OMS.  
+
+---
+
+## 10 Risk Management Framework  
+
+### 10.1 Hierarchy  
+Global → Market → Strategy → Order  
+Each level can veto downstream order.  
+
+### 10.2 Rules (configurable)  
+- Daily-loss: `(NAV_today_start - NAV_current) / NAV_start ≥ x%` → block.  
+- Drawdown: `(Peak - NAV) / Peak ≥ y%` → flatten & pause.  
+- Position sizing: Kelly-fraction, volatility-target, fixed-fraction.  
+- Leverage: `gross_notional / NAV ≤ max_leverage`.  
+
+### 10.3 Emergency Triggers  
+- Manual button (UI)  
+- API key invalid / 2× reject  
+- Heartbeat timeout > 10 s  
+- Operator Telegram “/kill” command  
+
+---
+
+## 11 Backtesting & Simulation  
+
+- Engine consumes identical `MarketEvent` stream.  
+- Supports slippage models: fixed, volatility-square-root, liquidity-book.  
+- Monte Carlo: reshuffle returns, bootstrap, 1 k runs.  
+- Walk-forward: rolling 70 % train / 30 % test, monthly re-optimisation.  
+- Performance metrics: CAGR, Sharpe, Sortino, max DD, win-rate, profit-factor.  
+- Reports exported to HTML & PDF.  
+
+---
+
+## 12 UI / UX Requirements  
+
+### 12.1 Option A – Web Dashboard (preferred)  
+- Tech: React + TypeScript + WebSocket (FastAPI channels)  
+- Views: Portfolio, Strategies, Risk, Logs, Settings  
+- Actions: Start/Stop/Pause model, Close position, Emergency stop  
+
+### 12.2 Option B – Electron wrapper around above for native feel.  
+
+### 12.3 CLI companion for headless cloud deploy.  
+
+---
+
+## 13 Security Requirements  
+
+| Control | Implementation |
+|---------|----------------|
+| API keys | Stored in OS keyring (macOS Keychain, Linux SecretService) or Hashicorp Vault (prod). |
+| Encryption | AES-256 at rest; TLS 1.3 in transit. |
+| Isolation | Separate Docker containers per adapter; non-root UID. |
+| Secrets rotation | 90-day reminder via UI; one-click regenerate. |
+| Audit log | append-only (signed) – order lifecycle, config change, logins. |
+| Fail-safe | Kill-switch deletes RAM-stored keys on SIGTERM. |
+| 2-FA | TOTP for dashboard login (future). |
+
+---
+
+## 14 Legal & Compliance (high-level)  
+
+- **Personal use**: generally no licence needed; user must verify broker TOS allows automation.  
+- **Distribution to friends**: may constitute “investment advice” or “managing money” in some jurisdictions – recommend forming LLP & drafting service agreement.  
+- **Commercial SaaS**: would require MiFID / MiCA / SEC RIA assessment – outside v1 scope.  
+- **Data**: price data licences from redistributors; news sentiment engine must respect copyright (headlines only or licence).  
+- **Liability**: ship with “no warranty” MIT licence; user accepts full risk; include clause capping damages to fees paid (if any).  
+- **Privacy**: no user data leaves local machine unless opt-in telemetry (GDPR art. 6-1-a).  
+
+---
+
+## 15 Deployment Topology  
+
+**Development**  
+- Docker-Compose: core + Postgres + Redis + Grafana  
+
+**Production (personal)**  
+- Single Linux mini-PC (e.g., Intel NUC)  
+- systemd services; WireGuard VPN for remote access  
+
+**Future Cloud**  
+- Kubernetes cluster; separate namespaces per environment; ArgoCD GitOps.  
+
+---
+
+## 16 Roadmap & Phases  
+
+| Phase | Milestone | Duration | Capital Req. |
+|-------|-----------|----------|--------------|
+| P0 | Setup repo, CI/CD, lint, unit stubs | 1 w | 0 € |
+| P1 | Core engine, ports, in-memory bus | 2 w | 0 € |
+| P2 | First market adapter – Binance spot | 1 w | 0 € |
+| P3 | EMA-Cross model + backtest engine | 2 w | 0 € |
+| P4 | Advisory mode live run (BTC, ETH) | 1 w | 0 € |
+| P5 | Risk engine + kill-switch | 1 w | 0 € |
+| P6 | Operator mode with 50 € real capital | 1 w | 50 € |
+| P7 | Forex adapter (OANDA) + multi-market | 3 w | 0 € |
+| P8 | Web dashboard MVP | 3 w | 0 € |
+| P9 | Paper-trading public demo → friends | 1 w | 0 € |
+| P10 | Monte-Carlo, Walk-forward, report PDF | 2 w | 0 € |
+| P11 | Security hardening & audit | 2 w | 0 € |
+| P12 | AI News connector stub (optional) | 2 w | 0 € |
+| P13 | Commercial licence pack, docs, website | 4 w | 1 k € |
+
+---
+
+## 17 Open Issues & Decisions  
+
+1. **Persistence**: Postgres vs TimescaleDB vs DuckDB for tick data.  
+2. **Message bus**: Kafka vs NATS vs local zero-copy ring-buffer.  
+3. **UI hosting**: bundle Flask inside Electron or separate process.  
+4. **Language for core**: keep Python or migrate critical path to Rust/Go for latency headroom.  
+
+---
+
+## 18 Appendices  
+
+A. Glossary  
+B. Naming conventions  
+C. Risk calculation pseudocode  
+D. Adapter checklist template  
+E. References (Clean Architecture, Algo Trading books, ISO 20022)  
+
+---
+

@@ -1,0 +1,660 @@
+# **Comprehensive Test Plan for Multi-Market Automated Trading System (MMATS)**
+
+**Version:** 1.0  
+**Date:** December 8, 2025  
+**Author:** Senior QA Engineer / Software Architect  
+**Audience:** Development Team, Product Management, Quality Assurance Team  
+**PRS Reference:** Claude PRS (MMATS) Version 1.0  
+
+---
+
+## **1. Overview**
+
+### **1.1 Purpose**
+This test plan defines the comprehensive testing strategy for the Multi-Market Automated Trading System (MMATS). The purpose is to ensure that all functional and non-functional requirements are validated, risk controls are effective, and the system operates reliably across backtesting, paper trading, and live execution modes.
+
+### **1.2 Scope**
+**In-Scope Testing:**
+- Core trading engine and strategy orchestration
+- Multi-market data ingestion and normalization (Crypto, Forex)
+- Risk management framework and safety controls
+- Backtesting engine with historical simulation
+- Paper trading with real-time simulation
+- Advisory and Operator mode functionality
+- UI/Dashboard functionality and usability
+- Security and credential management
+
+**Out-of-Scope (Initial Phase):**
+- High-frequency trading (<100ms) performance validation
+- Production cloud deployment scaling tests
+- Multi-user access control (Phase 1)
+- AI/LLM integration (future phase)
+
+### **1.3 Testing Objectives**
+1. **Functional Validation:** Verify all requirements from PRS are correctly implemented
+2. **Risk Safety:** Ensure all risk controls function as fail-safes
+3. **Performance:** Validate latency and throughput requirements are met
+4. **Reliability:** Confirm system stability under normal and edge conditions
+5. **Data Integrity:** Ensure accurate position tracking and P&L calculation
+6. **Multi-Market Coordination:** Validate simultaneous operation across markets
+
+---
+
+## **2. Test Strategy**
+
+### **2.1 Unit Testing**
+**Coverage:** >80% for core business logic
+**Framework:** pytest with unittest.mock for Python components
+**Focus Areas:**
+- Individual strategy model calculations
+- Risk rule validation logic
+- Data normalization functions
+- Position sizing algorithms
+- Indicator calculations
+
+### **2.2 Integration Testing**
+**Approach:** Component integration with mocked external services
+**Focus Areas:**
+- Strategy engine → Risk manager → Order manager flow
+- Market data adapters → Normalization pipeline → Strategy engine
+- Multi-strategy signal aggregation logic
+- Broker adapter error handling and retry logic
+
+### **2.3 End-to-End Testing**
+**Approach:** Full system testing with simulated environments
+**Environments:**
+- **E2E-Backtest:** Historical data replay through full pipeline
+- **E2E-Paper:** Real-time simulation with mocked broker APIs
+- **E2E-Live-Mini:** Live trading with minimal capital (€10-50) on testnet
+
+### **2.4 Regression Testing**
+**Automation:** 100% of critical path tests automated
+**Triggers:** Code changes, configuration updates, dependency updates
+**Focus:** Ensure no breaking changes to existing functionality
+
+### **2.5 Backtesting Validation**
+**Methodology:**
+- Compare backtest results against known historical outcomes
+- Validate no look-ahead bias in calculations
+- Test different slippage and commission models
+- Verify walk-forward analysis produces consistent results
+
+### **2.6 Paper Trading Validation**
+**Methodology:**
+- Run identical strategies in paper vs live data feeds
+- Compare execution simulation vs expected fills
+- Validate latency measurements meet requirements
+- Test failover and recovery scenarios
+
+### **2.7 Risk Management Testing**
+**Approach:** Deliberate violation of each risk rule
+**Focus Areas:**
+- Daily loss limit enforcement
+- Drawdown circuit breaker functionality
+- Position size limits
+- Leverage restrictions
+- Emergency shutdown procedures
+
+### **2.8 Multi-Market & Multi-Model Testing**
+**Methodology:**
+- Simultaneous operation of 3+ strategies across 2+ markets
+- Validate resource isolation (CPU, memory, threads)
+- Test market adapter failover scenarios
+- Verify cross-market risk aggregation
+
+---
+
+## **3. Test Items / Modules**
+
+| Module | Priority | Testing Level | Description |
+|--------|----------|---------------|-------------|
+| **Model Interface (IStrategy)** | CRITICAL | Unit, Integration | Strategy contract implementation and validation |
+| **Core Engine / Orchestration** | CRITICAL | Integration, E2E | Multi-strategy coordination and pipeline execution |
+| **Risk Manager** | CRITICAL | Unit, Integration, E2E | Risk rule validation and enforcement |
+| **Broker/Exchange Adapter** | HIGH | Integration, E2E | Market connectivity and order execution |
+| **Market Data Feed** | HIGH | Integration | Real-time and historical data ingestion |
+| **Backtesting Engine** | HIGH | Integration, E2E | Historical simulation and performance reporting |
+| **Paper Trading Engine** | HIGH | Integration, E2E | Real-time simulation with mocked execution |
+| **Portfolio Manager** | MEDIUM | Unit, Integration | Position tracking and P&L calculation |
+| **UI / Dashboard** | MEDIUM | Integration, E2E | Monitoring, control, and visualization |
+| **Configuration System** | MEDIUM | Unit, Integration | Settings management and validation |
+| **Logging & Audit System** | MEDIUM | Unit, Integration | Event logging and audit trail |
+| **Security Module** | CRITICAL | Integration | Credential management and access control |
+| **AI/LLM News Integration** | LOW/FUTURE | Integration | Sentiment analysis and strategy impact |
+
+---
+
+## **4. Test Cases**
+
+### **4.1 Model Interface Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-MI-01** | IStrategy | Validate standard input acceptance | `MarketData` + `AccountState` objects | Valid `TradeSignal` or `None` | No exceptions; proper response format |
+| **TC-MI-02** | IStrategy | Test missing indicator data | `MarketData` without required indicators | `None` or graceful degradation | No crashes; proper error handling |
+| **TC-MI-03** | IStrategy | Validate position sizing bounds | Signal with position_size > 1.0 | Adjusted to max 1.0 or rejection | Position size ≤ 1.0 |
+| **TC-MI-04** | IStrategy | Test hot reload capability | Updated strategy file at runtime | New version loads without restart | Strategy updates without system downtime |
+| **TC-MI-05** | IStrategy | Crash isolation | Strategy throwing unhandled exception | Other strategies continue running | System remains operational |
+
+### **4.2 Core Engine Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-CE-01** | Core Engine | Multiple strategy concurrent execution | 10 strategies, 5 symbols each | All strategies execute within 100ms | Latency < 100ms p95 |
+| **TC-CE-02** | Core Engine | Signal conflict resolution (Consensus) | 3 strategies: 2×BUY, 1×SELL | BUY executed (majority) | Correct consensus logic applied |
+| **TC-CE-03** | Core Engine | Signal conflict resolution (Weighted) | Signals with confidences [0.8, 0.3, 0.6] | Highest confidence signal executed | Weighted logic correctly applied |
+| **TC-CE-04** | Core Engine | Mode switching (Advisory→Operator) | User confirms mode change | Orders now sent to broker | Double-confirmation required |
+| **TC-CE-05** | Core Engine | Resource limit enforcement | 20 strategies loading | System rejects beyond limit | Resource limits enforced |
+
+### **4.3 Risk Management Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-RM-01** | Risk Manager | Daily loss limit trigger | -6% daily P&L with 5% limit | All positions closed, trading halted | Circuit breaker activates |
+| **TC-RM-02** | Risk Manager | Drawdown limit enforcement | -12% drawdown with 10% limit | Trading paused, alerts sent | Drawdown protection active |
+| **TC-RM-03** | Risk Manager | Position size limit | Signal for 3% position with 2% limit | Position reduced to 2% | Size limits enforced |
+| **TC-RM-04** | Risk Manager | Leverage limit | Attempt 5× leverage with 3× limit | Order rejected or size adjusted | Leverage limits enforced |
+| **TC-RM-05** | Risk Manager | Emergency stop manual trigger | User clicks emergency stop | All positions closed within 5s | System halts within timeframe |
+
+### **4.4 Multi-Market Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-MM-01** | Multi-Market | Concurrent crypto+forex operation | BTCUSD + EURUSD strategies | Both execute simultaneously | No cross-market interference |
+| **TC-MM-02** | Multi-Market | Market adapter failover | Primary data feed disconnects | Fallback feed activates within 1s | Failover < 1s latency |
+| **TC-MM-03** | Multi-Market | Cross-market risk aggregation | Positions in both crypto & forex | Global exposure calculated correctly | Accurate aggregate risk |
+| **TC-MM-04** | Multi-Market | Market-specific configuration | Different timeframes per market | Each market respects its config | Configuration isolation |
+| **TC-MM-05** | Multi-Market | Timezone handling | Markets in different time zones | All times normalized to UTC | Consistent time handling |
+
+### **4.5 Backtesting Engine Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-BT-01** | Backtest | Historical data accuracy | 2 years BTC data, SMA crossover | Known win rate within ±2% | Matches reference results |
+| **TC-BT-02** | Backtest | Slippage modeling | High volatility period | Realistic fill prices vs ideal | Slippage > 0 during volatility |
+| **TC-BT-03** | Backtest | Commission impact | 100 trades with 0.1% fee | P&L reflects fee deduction | Accurate commission accounting |
+| **TC-BT-04** | Backtest | Walk-forward validation | Rolling 70/30 train/test | OOS performance > random | No overfitting detected |
+| **TC-BT-05** | Backtest | Performance reporting | Backtest results | All metrics calculated correctly | Sharpe, Sortino, MDD accurate |
+
+### **4.6 Paper Trading Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-PT-01** | Paper Trading | Live data processing | Real-time WebSocket feed | Signals generated within 500ms | Latency < 500ms p95 |
+| **TC-PT-02** | Paper Trading | Simulation accuracy | Identical strategy paper vs live | Results within ±5% over 1 week | Close correlation |
+| **TC-PT-03** | Paper Trading | Order fill simulation | Limit order during volatility | Realistic fill probability | Not all orders fill |
+| **TC-PT-04** | Paper Trading | State persistence | System restart during paper trade | Positions restored correctly | No state loss |
+| **TC-PT-05** | Paper Trading | Resource monitoring | 24-hour paper trading run | Memory stable, no leaks | Resource usage stable |
+
+### **4.7 Security Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-SEC-01** | Security | API key encryption | Sensitive credentials | Encrypted in storage, never logged | No plaintext exposure |
+| **TC-SEC-02** | Security | Credential rotation | New API keys generated | Old keys invalidated, new active | Smooth rotation |
+| **TC-SEC-03** | Security | Audit log integrity | Trade execution events | Immutable log with timestamps | No log tampering possible |
+| **TC-SEC-04** | Security | Environment isolation | Test vs live configs | No cross-environment contamination | Strict separation |
+| **TC-SEC-05** | Security | Rate limiting | Rapid API calls | Requests throttled per exchange rules | No API bans triggered |
+
+### **4.8 UI/Dashboard Test Cases**
+
+| Test Case ID | Module | Objective | Input | Expected Output | Pass/Fail Criteria |
+|-------------|---------|-----------|-------|----------------|-------------------|
+| **TC-UI-01** | Dashboard | Real-time updates | Market data changes | UI updates within 1s | WebSocket latency < 1s |
+| **TC-UI-02** | Dashboard | Risk visualization | Approaching limits | Visual warnings at 80%, 90%, 100% | Clear warning signals |
+| **TC-UI-03** | Dashboard | Control validation | Invalid configuration input | Error messages with suggestions | User-friendly validation |
+| **TC-UI-04** | Dashboard | Export functionality | Trade history export | CSV/FIXML files generated correctly | Proper format and data |
+| **TC-UI-05** | Dashboard | Responsive design | Various screen sizes | Layout adapts correctly | Mobile/tablet friendly |
+
+---
+
+## **5. Traceability Matrix**
+
+| PRS Requirement ID | PRS Description | Module | Test Case IDs | Status |
+|-------------------|-----------------|--------|--------------|--------|
+| **FR-S1** | Standardized Strategy Template | Model Interface | TC-MI-01, TC-MI-02, TC-MI-03 | Planned |
+| **FR-S2** | Multi-Strategy Concurrent Execution | Core Engine | TC-CE-01, TC-CE-02, TC-CE-03 | Planned |
+| **FR-03** | Advisory Mode | Core Engine | TC-CE-04 | Planned |
+| **FR-04** | Operator Mode | Core Engine | TC-CE-04, TC-SEC-04 | Planned |
+| **FR-M1** | Market Independence | Multi-Market | TC-MM-01, TC-MM-04 | Planned |
+| **FR-M2** | Unified Market Data Pipeline | Market Data | TC-MM-02, TC-MM-05 | Planned |
+| **FR-07** | Historical Simulation | Backtesting | TC-BT-01, TC-BT-02, TC-BT-03 | Planned |
+| **FR-08** | Paper Trading | Paper Trading | TC-PT-01, TC-PT-02, TC-PT-03 | Planned |
+| **FR-09** | Multi-Level Risk Limits | Risk Manager | TC-RM-01, TC-RM-02, TC-RM-03 | Planned |
+| **FR-10** | Emergency Shutdown | Risk Manager | TC-RM-05 | Planned |
+| **FR-11** | Real-Time Monitoring Dashboard | UI/Dashboard | TC-UI-01, TC-UI-02 | Planned |
+| **FR-12** | Configuration Management | UI/Dashboard | TC-UI-03 | Planned |
+| **NFR-01** | Latency Requirements | All | TC-CE-01, TC-PT-01, TC-UI-01 | Planned |
+| **NFR-04** | Availability | Core Engine | TC-MM-02, TC-PT-04 | Planned |
+| **NFR-07** | Credential Management | Security | TC-SEC-01, TC-SEC-02 | Planned |
+| **NFR-09** | Audit Trail | Security | TC-SEC-03 | Planned |
+| **NFR-10** | Code Quality | All | Coverage metrics | Planned |
+
+---
+
+## **6. Test Data**
+
+### **6.1 Historical Test Data Sets**
+| Data Set | Description | Period | Symbols | Purpose |
+|----------|-------------|--------|---------|---------|
+| **HIST-CRYPTO-1** | BTC/USD, ETH/USD | 2020-2023 daily | BTCUSD, ETHUSD | Backtesting validation |
+| **HIST-CRYPTO-2** | High volatility periods | Selected months | Multiple | Stress testing |
+| **HIST-FOREX-1** | Major forex pairs | 2021-2023 hourly | EURUSD, GBPUSD | Multi-market testing |
+| **HIST-GAPPED** | Data with gaps/missing | Custom | BTCUSD | Edge case testing |
+| **HIST-CORRELATED** | Correlated assets | 2022-2023 | BTCUSD, SPY | Correlation rule testing |
+
+### **6.2 Simulated Live Data**
+| Scenario | Description | Rate | Volatility | Purpose |
+|----------|-------------|------|------------|---------|
+| **SIM-NORMAL** | Normal market conditions | 1-10/sec | Low-medium | Standard testing |
+| **SIM-VOLATILE** | High volatility | 50-100/sec | High | Stress/performance testing |
+| **SIM-FLASHCRASH** | Rapid price drops | 100+/sec | Extreme | Circuit breaker testing |
+| **SIM-DISCONNECT** | Intermittent connectivity | Variable | Normal | Failover testing |
+
+### **6.3 Mocked Broker APIs**
+| Mock Service | Capabilities | Purpose |
+|--------------|--------------|---------|
+| **MOCK-BINANCE** | Full Binance API simulation | Integration testing |
+| **MOCK-OANDA** | OANDA REST/WebSocket | Forex market testing |
+| **MOCK-ERROR** | Various error conditions | Error handling validation |
+| **MOCK-SLOW** | High latency responses | Timeout handling |
+
+### **6.4 Example Portfolios**
+| Portfolio | Capital | Markets | Strategies | Purpose |
+|-----------|---------|---------|------------|---------|
+| **PORT-MINI** | €50 | Crypto only | 2 strategies | Minimal live testing |
+| **PORT-BALANCED** | €200 | Crypto+Forex | 5 strategies | Full system testing |
+| **PORT-STRESS** | €500 | All markets | 10+ strategies | Load testing |
+| **PORT-RISKY** | €100 | High leverage | Aggressive strategies | Risk limit testing |
+
+---
+
+## **7. Tools and Environment**
+
+### **7.1 Testing Frameworks**
+| Tool | Purpose | Version |
+|------|---------|---------|
+| **pytest** | Python unit/integration testing | 7.4+ |
+| **unittest.mock** | Mocking external dependencies | Python stdlib |
+| **pytest-cov** | Test coverage reporting | 4.1+ |
+| **pytest-asyncio** | Async testing support | 0.21+ |
+| **pytest-benchmark** | Performance testing | 4.0+ |
+| **hypothesis** | Property-based testing | 6.85+ |
+
+### **7.2 Simulation Environments**
+| Environment | Purpose | Configuration |
+|-------------|---------|--------------|
+| **DEV-LOCAL** | Developer testing | Docker Compose, mocked APIs |
+| **CI-PIPELINE** | Automated testing | GitHub Actions, full test suite |
+| **STAGING-PAPER** | Paper trading validation | Real data feeds, mocked execution |
+| **STAGING-LIVE-MINI** | Live testing with minimal capital | Testnet APIs, €10-50 capital |
+| **PERF-LOAD** | Performance testing | Isolated environment, load generators |
+
+### **7.3 Monitoring and Logging**
+| Tool | Purpose | Configuration |
+|------|---------|--------------|
+| **Prometheus + Grafana** | Performance metrics | Latency, throughput, error rates |
+| **ELK Stack** | Log aggregation and analysis | Structured logging with filtering |
+| **Sentry** | Error tracking and alerting | Real-time error notifications |
+| **Locust** | Load testing | Simulated user/traffic patterns |
+
+### **7.4 CI/CD Integration**
+```yaml
+# Example GitHub Actions workflow
+name: MMATS Test Pipeline
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      
+      - name: Run unit tests
+        run: pytest tests/unit/ --cov=src --cov-report=xml
+      
+      - name: Run integration tests
+        run: pytest tests/integration/ --cov=src --cov-append
+      
+      - name: Run E2E backtest
+        run: pytest tests/e2e/test_backtest.py --test-data=historical
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+      
+      - name: Security scan
+        run: bandit -r src/ -f json -o bandit-report.json
+```
+
+---
+
+## **8. Metrics and Reporting**
+
+### **8.1 Test Coverage Metrics**
+| Metric | Target | Measurement |
+|--------|--------|-------------|
+| **Line Coverage** | ≥80% | pytest-cov |
+| **Branch Coverage** | ≥70% | pytest-cov |
+| **Critical Path Coverage** | 100% | Manual verification |
+| **Risk Module Coverage** | 100% | All rules tested |
+
+### **8.2 Performance Metrics**
+| Metric | Requirement | Measurement Method |
+|--------|-------------|-------------------|
+| **Strategy Latency (p95)** | <100ms | pytest-benchmark |
+| **Order Execution Latency** | <500ms | End-to-end timing |
+| **Data Processing Throughput** | 1000+/sec | Load testing |
+| **Memory Usage** | <2GB + 500MB/strategy | Resource monitoring |
+| **Recovery Time** | <5 minutes | Crash/recovery tests |
+
+### **8.3 Reporting Format**
+```json
+{
+  "test_run": {
+    "id": "TR-2025-12-08-001",
+    "environment": "STAGING-PAPER",
+    "duration": "2h 30m",
+    "timestamp": "2025-12-08T14:30:00Z"
+  },
+  "summary": {
+    "total_tests": 150,
+    "passed": 145,
+    "failed": 3,
+    "skipped": 2,
+    "success_rate": 96.7
+  },
+  "coverage": {
+    "lines": 82.5,
+    "branches": 71.2,
+    "critical_path": 100.0
+  },
+  "performance": {
+    "avg_strategy_latency_ms": 45.2,
+    "p95_strategy_latency_ms": 89.7,
+    "max_memory_mb": 1850
+  },
+  "risk_validation": {
+    "circuit_breakers_tested": 5,
+    "all_limits_enforced": true,
+    "emergency_stop_response_s": 0.8
+  },
+  "failures": [
+    {
+      "test_id": "TC-RM-04",
+      "module": "Risk Manager",
+      "issue": "Leverage limit not enforced on partial fills",
+      "severity": "HIGH"
+    }
+  ]
+}
+```
+
+### **8.4 Dashboard Visualization**
+- Real-time test execution status
+- Coverage trend charts (historical)
+- Performance regression alerts
+- Risk test pass/fail indicators
+- Automated test report generation (PDF/HTML)
+
+---
+
+## **9. Risk & Contingency**
+
+### **9.1 High-Risk Areas**
+| Area | Risk Level | Mitigation Strategy | Test Focus |
+|------|------------|---------------------|------------|
+| **Live Order Execution** | CRITICAL | Triple confirmation, small capital first | TC-CE-04, TC-SEC-04 |
+| **Risk Limit Enforcement** | CRITICAL | Independent validation, audit logs | TC-RM-01 to TC-RM-05 |
+| **Multi-Market Coordination** | HIGH | Isolation, independent failover | TC-MM-01 to TC-MM-05 |
+| **Data Integrity** | HIGH | Checksums, reconciliation scripts | TC-BT-01, TC-PT-02 |
+| **API Rate Limiting** | MEDIUM | Client-side throttling, queueing | TC-SEC-05 |
+
+### **9.2 Fallback Mechanisms**
+| Scenario | Primary | Fallback | Test Validation |
+|----------|---------|----------|-----------------|
+| **Data Feed Disconnect** | WebSocket | REST polling | TC-MM-02 |
+| **Broker API Failure** | Primary broker | Manual override | TC-RM-05 |
+| **Risk Engine Failure** | Automated rules | Manual pause | Integration tests |
+| **Database Corruption** | Primary DB | Backup restore | Recovery tests |
+| **Network Outage** | Direct connection | VPN/SSH tunnel | Network failure tests |
+
+### **9.3 Safety Limits Testing**
+| Limit | Test Method | Acceptance Criteria |
+|-------|-------------|-------------------|
+| **Maximum Orders/Minute** | Load generator | No API bans, queue properly |
+| **Maximum Open Positions** | Multiple strategies | Rejects beyond limit |
+| **Maximum Drawdown** | Simulated losses | Triggers at exact threshold |
+| **Daily Loss Limit** | Simulated losing day | Trading halted at limit |
+| **Memory Usage Limit** | Memory stress test | Clean shutdown before OOM |
+
+### **9.4 Contingency Test Procedures**
+```python
+# Example contingency test
+def test_emergency_contingency():
+    """
+    Test full system recovery after emergency stop
+    """
+    # 1. Start system with live trading
+    system.start(mode="operator")
+    
+    # 2. Trigger emergency stop
+    system.emergency_stop()
+    
+    # 3. Verify all positions closed
+    assert system.get_open_positions() == []
+    
+    # 4. Restart system
+    system.restart()
+    
+    # 5. Verify state recovery
+    assert system.get_trade_history() == previous_history
+    
+    # 6. Verify cannot restart in operator mode without confirmation
+    with pytest.raises(ConfirmationRequired):
+        system.set_mode("operator")
+```
+
+---
+
+## **10. Approval and Maintenance**
+
+### **10.1 Approval Process**
+| Test Level | Approved By | Criteria for Approval |
+|------------|-------------|---------------------|
+| **Unit Tests** | Lead Developer | 80% coverage, all critical functions |
+| **Integration Tests** | QA Lead + Architect | All modules integrated, error handling |
+| **E2E Backtesting** | Quant Developer | Matches reference models, no bias |
+| **E2E Paper Trading** | QA Lead + Product Owner | 7-day stable run, meets latency |
+| **Risk Validation** | Risk Officer (if available) + Architect | All limits enforced, audit logs |
+| **Live Mini-Test** | Product Owner + All Leads | Successful €10-50 trading week |
+
+### **10.2 Maintenance Strategy**
+| Task | Frequency | Responsible | Automation |
+|------|-----------|-------------|------------|
+| **Test Case Review** | Monthly | QA Lead | JIRA/TestRail integration |
+| **Test Data Refresh** | Quarterly | Data Engineer | Automated download scripts |
+| **Performance Baseline Update** | Release | DevOps | Automated benchmarking |
+| **Security Test Updates** | As needed | Security Lead | Dependency scanning |
+| **Regression Test Expansion** | Each feature | Feature Owner | Test-driven development |
+
+### **10.3 Test Case Lifecycle**
+```
+New Feature → Test Design → Implementation → 
+Review → Automated → CI Pipeline → 
+Results Analysis → Bug Fix → Retest → 
+Documentation Update → Baseline Update
+```
+
+### **10.4 Documentation Requirements**
+1. **Test Case Documentation:**
+   - Clear objective and acceptance criteria
+   - Preconditions and test data requirements
+   - Step-by-step execution instructions
+   - Expected results with examples
+   - Failure analysis procedures
+
+2. **Test Environment Documentation:**
+   - Environment setup and configuration
+   - Data setup procedures
+   - Mock services configuration
+   - Monitoring and logging setup
+
+3. **Results Documentation:**
+   - Test execution logs
+   - Performance metrics history
+   - Coverage trend analysis
+   - Risk assessment updates
+
+### **10.5 Change Management**
+```yaml
+# Example change management process
+change_process:
+  test_modification:
+    triggers:
+      - new_feature: "Requires new test cases"
+      - bug_fix: "Requires test update"
+      - requirement_change: "Test case update needed"
+    
+    workflow:
+      1. Create change ticket
+      2. Impact analysis (existing tests affected?)
+      3. Test design review
+      4. Implementation
+      5. Peer review
+      6. Integration into CI
+      7. Documentation update
+    
+    approval:
+      unit: "Lead Developer"
+      integration: "QA Lead + Architect"
+      e2e: "Product Owner + QA Lead"
+```
+
+---
+
+## **APPENDIX A: Test Environment Setup**
+
+### **A.1 Local Development Environment**
+```bash
+# 1. Clone repository
+git clone https://github.com/yourorg/mmatstrading.git
+cd mmatstrading
+
+# 2. Install dependencies
+pip install -r requirements-dev.txt
+
+# 3. Setup test database
+docker-compose -f docker-compose.test.yml up -d
+
+# 4. Load test data
+python scripts/load_test_data.py --dataset HIST-CRYPTO-1
+
+# 5. Run test suite
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+```
+
+### **A.2 CI Environment Variables**
+```bash
+# Required environment variables for testing
+export TEST_ENV=ci
+export TEST_DATABASE_URL=postgresql://test:test@localhost:5432/test
+export TEST_REDIS_URL=redis://localhost:6379/0
+export TEST_BROKER_MOCK=true
+export TEST_API_KEYS_ENCRYPTED=true
+export TEST_CAPITAL_LIMIT=50  # €50 for testing
+```
+
+### **A.3 Performance Test Configuration**
+```yaml
+# performance_test_config.yaml
+load_test:
+  duration_minutes: 30
+  strategies: 10
+  symbols_per_strategy: 5
+  data_rate_per_second: 1000
+  expected_latency_ms:
+    p50: 50
+    p95: 100
+    p99: 200
+  resource_limits:
+    cpu_percent: 80
+    memory_mb: 2048
+    disk_iops: 1000
+```
+
+---
+
+## **APPENDIX B: Risk-Based Testing Priority**
+
+### **B.1 Test Priority Matrix**
+| Risk Impact | Probability | Test Priority | Examples |
+|-------------|-------------|---------------|----------|
+| **High** | **High** | P0 - CRITICAL | Live order safety, risk limits |
+| **High** | **Medium** | P1 - HIGH | Data integrity, multi-market coordination |
+| **Medium** | **High** | P2 - MEDIUM | Performance, API error handling |
+| **Medium** | **Medium** | P3 - MEDIUM | UI validation, configuration |
+| **Low** | **Any** | P4 - LOW | Cosmetic issues, minor features |
+
+### **B.2 Release Gating Criteria**
+```yaml
+release_criteria:
+  must_pass:
+    - all_p0_tests: true
+    - risk_tests_coverage: 100%
+    - no_critical_bugs: true
+    - performance_targets_met: true
+    - security_scans_clean: true
+  
+  should_pass:
+    - all_p1_tests: true
+    - test_coverage: ">=80%"
+    - paper_trading_7d_stable: true
+    
+  nice_to_have:
+    - all_p2_tests: true
+    - ui_tests_automated: true
+    - documentation_complete: true
+```
+
+---
+
+## **SIGN-OFF**
+
+This test plan has been reviewed and approved by:
+
+| Role | Name | Date | Signature |
+|------|------|------|-----------|
+| **QA Lead** | [Name] | [Date] | _________ |
+| **Lead Architect** | [Name] | [Date] | _________ |
+| **Product Owner** | [Name] | [Date] | _________ |
+| **Development Lead** | [Name] | [Date] | _________ |
+
+**Next Review Date:** March 8, 2026  
+**Revision History:** 1.0 - Initial version
+
+---
+
+## **DOCUMENT CONTROL**
+
+**Distribution:**
+- Development Team
+- Quality Assurance Team
+- Product Management
+- Technical Leadership
+- Risk/Compliance (as needed)
+
+**Confidentiality:** Internal Use Only  
+**Storage:** GitHub Repository `/docs/test-plan.md`  
+**Backup:** Automated daily to secure cloud storage
+
+**END OF DOCUMENT**

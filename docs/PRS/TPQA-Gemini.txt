@@ -1,0 +1,193 @@
+# 🧪 Master Test Plan (MTP)
+**Project Name:** MMATS (Multi-Market Automated Trading System)
+**Version:** 1.0
+**Author:** Senior QA Architect
+**Based on PRS:** Shoky / Deepseek / Claude Variations
+**Date:** December 8, 2025
+
+---
+
+## 1. Overview
+
+### 1.1 Purpose
+The purpose of this Master Test Plan (MTP) is to define the strategy, scope, and methodology for validating the MMATS algorithmic trading platform. Given the financial nature of the software, this plan prioritizes **capital preservation**, **determinism**, and **fail-safe mechanisms** over feature velocity.
+
+### 1.2 Scope
+This plan covers the validation of the Core Engine, Risk Management, Strategy Interface, Data Pipelines, and Execution Adapters. It includes Crypto and Forex markets in both Advisory and Operator modes.
+
+### 1.3 Testing Objectives
+1.  **Safety:** Ensure the Risk Manager acts as an unbreakable gatekeeper.
+2.  **Parity:** Verify that Backtest, Paper, and Live modes yield identical decisions given identical data.
+3.  **Isolation:** Ensure a failure in one strategy or market adapter does not crash the entire system.
+4.  **Precision:** Validate that all financial calculations use `Decimal` types to prevent floating-point errors.
+
+---
+
+## 2. Test Strategy
+
+The testing strategy follows the **Testing Pyramid**, heavily weighted towards Unit and Integration tests to ensure speed and reliability.
+
+| Test Level | Scope | Tools | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **Unit Testing** | Individual classes (Strategies, Risk Rules, Indicators). Mocking all external dependencies. | `pytest`, `pandas` | Developers |
+| **Integration Testing** | Interaction between modules (Strategy $\rightarrow$ Risk $\rightarrow$ Order). Testing actual Database I/O and Adapter connections (using Testnets). | `pytest`, `docker-compose` | QA / Dev |
+| **System (E2E) Testing** | Full lifecycle from Tick Ingestion to Order Execution in a simulated environment. | `pytest`, `vcrpy` | QA |
+| **Regression Testing** | Automated replay of historical "known" scenarios to ensure no regression in logic. | CI/CD Pipeline | Automation Eng. |
+| **Financial Testing** | Validation of P&L calculations, Fees, and Slippage models using "Golden Data" sets. | Custom Scripts | QA / Quant |
+
+---
+
+## 3. Test Items / Modules
+
+### 3.1 Core Modules
+1.  **Strategy Interface (`IStrategy`):** Validating input/output strictness.
+2.  **Orchestrator:** Multi-threading and signal aggregation (Consensus/Priority logic).
+3.  **Risk Manager:** The "Hard Gatekeeper" rules.
+4.  **Portfolio Manager:** Position tracking and P&L calculation.
+
+### 3.2 Infrastructure Modules
+5.  **Market Data Adapters:** Normalization of Crypto (8 decimals) vs Forex (5 decimals).
+6.  **Execution Adapters:** Handling API timeouts, rate limits, and order types.
+7.  **Persistence:** Database writes (TimescaleDB) and audit logs.
+
+### 3.3 Modes
+8.  **Backtesting Engine:** Speed and determinism.
+9.  **Paper/Live Engine:** Real-time signal processing latency.
+
+---
+
+## 4. Test Cases
+
+The following are representative test cases. The full suite will reside in the Test Management System (e.g., Jira/TestRail).
+
+### 4.1 Module: Risk Management (The Gatekeeper)
+
+| ID | Objective | Input | Expected Output | Pass/Fail Criteria |
+| :--- | :--- | :--- | :--- | :--- |
+| **TC-RISK-01** | Verify Max Position Size Limit | Signal to BUY 50% of capital (Limit is 20%) | Signal **REJECTED** by Risk Manager. Log entry created. | Order is NOT sent to execution adapter. |
+| **TC-RISK-02** | Verify Daily Loss Limit | Account P&L is -6% (Limit is -5%). Incoming BUY signal. | Signal **REJECTED**. System enters "Halt" state. | No new orders accepted until manual reset or next day. |
+| **TC-RISK-03** | Verify Emergency Stop (Circuit Breaker) | "PANIC" button triggered via UI or API. | 1. Cancel all pending orders.<br>2. Close all positions (if Config=HARD).<br>3. Stop Engine. | All positions closed within 5s. |
+| **TC-RISK-04** | Verify Asset Correlation Check | BUY EUR/USD signal while holding GBP/USD (Correlation > 0.9). | Risk Manager reduces position size or Rejects based on config. | Correlation logic correctly identifies exposure. |
+
+### 4.2 Module: Strategy Orchestration
+
+| ID | Objective | Input | Expected Output | Pass/Fail Criteria |
+| :--- | :--- | :--- | :--- | :--- |
+| **TC-ORCH-01** | Multi-Strategy Conflict (Consensus Mode) | Strat A: BUY BTC<br>Strat B: SELL BTC<br>Mode: CONSENSUS | No Trade (Signal blocked due to lack of consensus). | System logs conflict and takes no action. |
+| **TC-ORCH-02** | Strategy Crash Isolation | Strat A throws `ZeroDivisionError`. Strat B runs normally. | Strat A is disabled/restarted. Strat B continues trading. | System does NOT crash. Error logged. |
+| **TC-ORCH-03** | Signal Normalization | Forex Strategy outputs signal without Stop Loss. | Validation Error. Signal rejected before reaching Risk Manager. | Strict interface enforcement. |
+
+### 4.3 Module: Infrastructure & Data
+
+| ID | Objective | Input | Expected Output | Pass/Fail Criteria |
+| :--- | :--- | :--- | :--- | :--- |
+| **TC-DATA-01** | Decimal Precision | BTC Price: `40000.12345678`<br>Forex Price: `1.12345` | Stored as `Decimal` types, not Float. | No floating point artifacts (e.g., `1.12345000001`). |
+| **TC-DATA-02** | Data Gap Handling | Stream disconnects for 5 minutes, then reconnects. | System detects gap. Strategies implementing `on_gap` logic pause or backfill. | No erroneous signals generated on reconnection spikes. |
+| **TC-EXEC-01** | API Rate Limit Handling | Send 100 orders in 1 second. | Adapter queues orders internally and releases them respecting rate limit. | No "HTTP 429 Too Many Requests" from Broker. |
+
+### 4.4 Module: AI/LLM Integration (Future)
+
+| ID | Objective | Input | Expected Output | Pass/Fail Criteria |
+| :--- | :--- | :--- | :--- | :--- |
+| **TC-AI-01** | Async Sentiment Update | Redis Pub/Sub message: `{symbol: BTC, sentiment: -0.9}` | Strategy Confidence Score updates immediately. | Trading loop does not block waiting for message. |
+
+---
+
+## 5. Traceability Matrix
+
+This ensures every requirement in the PRS is covered by a test.
+
+| PRS Section | Requirement Description | Module | Test Case ID | Priority |
+| :--- | :--- | :--- | :--- | :--- |
+| **FR-S2** | Standardized `IStrategy` Interface | Core | TC-ORCH-03 | Critical |
+| **FR-S3** | Multi-Strategy Conflict Resolution | Orchestrator | TC-ORCH-01 | High |
+| **FR-R2** | Global Daily Loss Limit | Risk Manager | TC-RISK-02 | **Critical** |
+| **FR-R4** | Emergency Circuit Breaker | Risk Manager | TC-RISK-03 | **Critical** |
+| **FR-M1** | Concurrent Crypto & Forex execution | Adapters | TC-INT-05 | High |
+| **NF-P1** | Order Execution Latency < 500ms | Performance | TC-PERF-01 | High |
+| **NF-S1** | API Keys Encrypted (OS Keyring) | Security | TC-SEC-01 | Critical |
+
+---
+
+## 6. Test Data
+
+To ensure "Pipeline Parity" (Backtest = Live), we will use specific datasets:
+
+1.  **Golden Dataset (Static):**
+    *   A 30-day CSV file of BTC/USDT and EUR/USD (1m candles).
+    *   Contains specific edge cases: High Volatility, Zero Volume candles, Market Gaps.
+    *   *Usage:* Unit Tests and Regression Benchmarks.
+
+2.  **Replay Stream (Dynamic):**
+    *   A tool that reads the Golden Dataset and "publishes" it to the WebSocket adapter at 100x speed.
+    *   *Usage:* Integration Testing the Orchestrator.
+
+3.  **VCR Cassettes:**
+    *   Recorded API responses from Binance/OANDA Testnets (`vcrpy`).
+    *   *Usage:* Testing the Execution Adapters without hitting real APIs.
+
+---
+
+## 7. Tools and Environment
+
+### 7.1 Recommended Stack
+*   **Test Runner:** `pytest` (Standard for Python).
+*   **Mocking:** `unittest.mock` and `respx` (for async HTTP mocking).
+*   **Live Simulation:** `vcrpy` (records and replays HTTP interactions).
+*   **Linting/Static Analysis:** `mypy` (Strict typing), `ruff`.
+*   **CI Environment:** GitHub Actions or GitLab CI.
+
+### 7.2 Directory Structure
+```text
+tests/
+├── unit/
+│   ├── test_strategy_logic.py
+│   ├── test_risk_manager.py      <-- CRITICAL
+│   └── test_indicators.py
+├── integration/
+│   ├── test_binance_adapter.py
+│   └── test_orchestrator_flow.py
+├── e2e/
+│   └── test_full_trade_lifecycle.py
+└── data/
+    └── golden_btc_1h.csv
+```
+
+---
+
+## 8. Metrics and Reporting
+
+Testing success is not just "passing tests," but meeting strict financial software standards.
+
+### 8.1 Success Metrics
+*   **Statement Coverage:** > 90% (Higher than standard web apps due to financial risk).
+*   **Branch Coverage:** > 95% for Risk Management module.
+*   **Determinism:** Backtest results must be identical (bit-perfect) across 5 consecutive runs on different machines.
+*   **Leakage:** No API keys found in logs or memory dumps.
+
+### 8.2 Reporting
+*   **Pull Request Checks:** CI must pass all Unit/Integration tests before merge.
+*   **Nightly Reports:** Full regression suite including long-running backtests.
+*   **Risk Report:** A specific report detailing any theoretical logic holes discovered in the Risk Manager.
+
+---
+
+## 9. Risk & Contingency
+
+### 9.1 High-Risk Areas
+*   **Floating Point Errors:** Using `float` instead of `Decimal` for money.
+    *   *Mitigation:* Static analysis (`mypy`) to enforce `Decimal` types.
+*   **infinite Loops:** A strategy entering a loop and draining the API rate limit or balance.
+    *   *Mitigation:* Order Rate Limiter implemented at the Adapter level (e.g., max 5 orders/minute).
+*   **Environment Bleed:** Test orders sent to Live Broker.
+    *   *Mitigation:* System refuses to start in "Test Mode" if Production API keys are detected in config.
+
+---
+
+## 10. Approval and Maintenance
+
+*   **Test Owner:** QA Lead / Lead Developer.
+*   **Approval:** All releases to "Live/Operator Mode" require a sign-off on the **Traceability Matrix** to ensure no requirements were broken.
+*   **Maintenance:**
+    *   When a Broker API changes (e.g., Binance v3 -> v4), the Adapter Integration tests must be updated first.
+    *   Golden Datasets must be updated quarterly to reflect recent market volatility conditions.

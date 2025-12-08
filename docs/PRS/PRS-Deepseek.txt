@@ -1,0 +1,259 @@
+Deepseek PRS:
+
+
+
+# **Product Requirements Specification (PRS)**
+# **Multi-Market Automated Trading System (MMATS)**
+**Version:** 1.0  
+**Status:** Draft for Development  
+**Date:** October 26, 2023  
+**Audience:** Development Team, Stakeholders
+
+---
+
+## **Executive Summary**
+
+The Multi-Market Automated Trading System (MMATS) is a professional-grade, modular, and extensible automated trading platform designed initially for personal use with small capital (€100-€200). Its core value proposition is the ability to execute **medium-frequency algorithmic strategies simultaneously across multiple financial markets** (Cryptocurrency, Forex, Stocks) using a unified, model-agnostic engine. The system enforces a strict separation of concerns via Clean Architecture, allowing strategies, market data feeds, and execution brokers to be swapped independently. MMATS supports a full development lifecycle: historical backtesting, paper trading, and live execution, ensuring strategy behavior is identical across all environments. The architecture is future-proofed for the integration of AI/LLM-based news analysis and high-frequency trading (HFT) extensions.
+
+## **1. Product Scope & Goals**
+
+### **1.1 In-Scope**
+*   Development of a locally-hosted, modular trading engine core.
+*   Integration with select Crypto (e.g., Binance, Coinbase) and Forex (e.g., OANDA, FXCM) brokers for data and execution.
+*   Design and implementation of a standardized strategy/model interface.
+*   A comprehensive backtesting and simulation engine.
+*   A real-time "Advisory Mode" (signals only) and "Operator Mode" (fully automated execution).
+*   A multi-layered risk management framework.
+*   A basic monitoring and control UI (initially desktop or web-based).
+*   Secure storage and handling of API credentials.
+
+### **1.2 Out-of-Scope**
+*   Development of proprietary AI/LLM models (architecture readiness only).
+*   Direct market access (DMA) or colocation for HFT (Phase 1).
+*   Legal compliance services or official regulatory licensing.
+*   Mobile application.
+*   Custodial services or banking integrations.
+
+### **1.3 User Personas**
+1.  **The Developer-Trader:** Primary user. Technically proficient, understands markets and code. Uses MMATS to implement, test, and deploy personal trading algorithms. Values transparency, modularity, and precise control.
+2.  **The Trusted Peer:** Secondary user. A friend of the Developer-Trader. May receive shared signals or limited access to a hosted instance. Has basic trading knowledge but relies on the system's reliability and risk controls.
+3.  **The Future Commercial User:** Tertiary user. Envisioned for potential commercialization. Requires robust UI, reporting, multi-user support, and enhanced compliance features.
+
+## **2. System Architecture Overview**
+
+MMATS will follow **Clean Architecture** and **Hexagonal (Ports & Adapters)** patterns, ensuring core business logic is independent of external agencies (brokers, data feeds, UI).
+
+### **2.1 High-Level Logical Architecture**
+```
+[External World]
+        |
+        v
++---------------------+  Ports (Interfaces)  +----------------------+
+|     ADAPTERS        |<====================>|      CORE            |
+|                     |                      |                      |
+| - Market Data Feeds |                      | - Strategy Engine    |
+| - Execution Brokers |                      | - Risk Manager       |
+| - News APIs (AI)    |                      | - Order Manager      |
+| - UI (CLI/Web/Desktop)|                    | - Position Manager   |
+| - Persistence (DB)  |                      +----------------------+
++---------------------+                              |
+        ^                                            v
+        |                              +----------------------+
+        +==============================|   DOMAIN MODELS      |
+                                       |                      |
+                                       | - Order              |
+                                       | - Position           |
+                                       | - Market Data        |
+                                       | - Strategy           |
+                                       +----------------------+
+```
+
+### **2.2 Core Tenets**
+*   **Market Agnosticism:** Core engine processes normalized data objects; market-specific details are handled in adapters.
+*   **Strategy Agnosticism:** All trading models implement a strict `IStrategy` interface.
+*   **Pipeline Parity:** The same `Strategy Engine -> Risk Manager -> Order Manager` pipeline is used for Backtest, Paper, and Live modes.
+
+## **3. Functional Requirements**
+
+### **3.1 Strategy/Model Management (FR-S)**
+*   **FR-S1:** System shall allow loading of multiple strategy modules dynamically at runtime.
+*   **FR-S2:** Each strategy must implement a defined `IStrategy` interface (see Section 8.1).
+*   **FR-S3:** Strategies shall receive standardized `MarketData` and `AccountState` objects.
+*   **FR-S4:** Strategies shall output standardized `TradeSignal` objects (Action, Symbol, Size, SL, TP).
+*   **FR-S5:** System shall allow enabling/disabling of individual strategies without restart.
+
+### **3.2 Multi-Market Execution (FR-M)**
+*   **FR-M1:** System shall support concurrent operation in Crypto and Forex markets.
+*   **FR-M2:** A single strategy shall be capable of generating signals for multiple symbols across different markets.
+*   **FR-M3:** System shall allow assignment of specific strategies to specific market/data feeds.
+*   **FR-M4:** Switching a strategy from Crypto to Forex shall require only configuration changes (different DataFeed & Broker adapters).
+
+### **3.3 Operational Modes (FR-O)**
+*   **FR-O1: Advisory Mode:** Engine processes data and generates `TradeSignal` objects, logs them, and may display them in UI. No orders are sent to brokers.
+*   **FR-O2: Operator Mode:** Engine passes validated `TradeSignal` objects to the `Order Manager` for execution via broker API.
+*   **FR-O3: Backtest Mode:** Engine replays historical data through the strategy pipeline, simulating execution and tracking P&L.
+*   **FR-O4: Paper Trade Mode:** Engine uses live data feeds but executes orders against a simulated broker/internal ledger.
+
+### **3.4 Risk Management (FR-R)**
+*   **FR-R1:** All `TradeSignal` objects must pass through a `RiskManager` component before execution.
+*   **FR-R2:** System shall enforce global daily loss limits (e.g., -5% of portfolio).
+*   **FR-R3:** System shall enforce per-strategy maximum drawdown limits.
+*   **FR-R4:** System shall enforce position sizing rules (e.g., max 2% risk per trade).
+*   **FR-R5:** System shall include an emergency "Circuit Breaker" that flattens all positions and halts trading if triggered (manually or by rule).
+*   **FR-R6:** System shall provide a manual override to close individual or all positions.
+
+### **3.5 Data & Backtesting (FR-D)**
+*   **FR-D1:** System shall source historical data for backtesting via market data adapters or local files.
+*   **FR-D2:** Backtesting engine shall support walk-forward analysis.
+*   **FR-D3:** Backtesting engine shall account for transaction costs (commission, spread, slippage models).
+*   **FR-D4:** System shall generate standard backtest reports (Sharpe Ratio, Max Drawdown, Win Rate, Profit Factor).
+
+### **3.6 User Interface (FR-U)**
+*   **FR-U1:** System shall provide a primary interface for monitoring system status (Web-based dashboard preferred for accessibility).
+*   **FR-U2:** UI shall display real-time P&L, open positions, and active strategies per market.
+*   **FR-U3:** UI shall display risk metrics (daily P&L, drawdown, exposure).
+*   **FR-U4:** UI shall provide controls to enable/disable strategies, switch modes, and trigger manual overrides.
+*   **FR-U5:** UI shall provide a log viewer for trade signals and system events.
+
+## **4. Non-Functional Requirements**
+
+*   **NF-R1 (Performance):** Engine must process signals and execute orders with latency < 500ms end-to-end for medium-frequency strategies (not yet HFT).
+*   **NF-R2 (Reliability):** System must achieve 99.5% uptime during market hours. Must log all critical actions and state changes.
+*   **NF-R3 (Scalability):** Architecture must support addition of new markets (e.g., Stocks) or data feeds without core engine modification.
+*   **NF-R4 (Maintainability):** Code must be modular, documented, and have a test coverage target of 80% for core business logic.
+*   **NF-R5 (Security):** API keys must be stored encrypted at rest, never logged, and accessible only to the required adapter component.
+*   **NF-R6 (Usability):** UI must allow a technically proficient user to configure a new strategy and market within 15 minutes.
+
+## **5. System Architecture & Modular Design**
+
+### **5.1 Core Modules**
+1.  **Orchestrator:** Main application loop, coordinates data flow between modules.
+2.  **Strategy Engine:** Loads `IStrategy` implementations, feeds them data, collects signals.
+3.  **Risk Manager:** Applies hierarchical risk rules (Global -> Market -> Strategy).
+4.  **Order Manager:** Translates risk-approved signals into broker-specific orders, manages order lifecycle.
+5.  **Position Manager:** Tracks all open positions and overall account state.
+6.  **Market Data Aggregator:** Normalizes data from different `IDataFeed` adapters into a `MarketData` object.
+
+### **5.2 Adapter Modules (Ports & Adapters)**
+*   **DataFeed Adapters:** `IBinanceDataFeed`, `IOandaDataFeed`. Fetch live/historical data.
+*   **Execution Adapters:** `IBinanceExecutionAdapter`, `IOandaExecutionAdapter`. Send orders, manage orders.
+*   **Persistence Adapter:** `IDatabaseAdapter`. For storing trades, logs, and system state.
+*   **UI Adapter:** `IWebServerAdapter`. Serves the frontend dashboard.
+
+### **5.3 Future AI Module (Pluggable)**
+*   **AI News Engine:** A separate service/container that subscribes to news streams, uses an LLM API to generate sentiment/impact scores, and publishes them to a message bus (e.g., Redis Pub/Sub).
+*   **AI Adapter:** Within the core, an `IAIEventAdapter` subscribes to the bus, receiving `NewsImpactScore` objects. These scores are then made available to strategies (optional) and to the Risk Manager for dynamic confidence adjustment.
+
+## **6. API & Model Interface Definition**
+
+### **6.1 Standardized `IStrategy` Interface**
+```python
+class IStrategy(ABC):
+    @property
+    def name(self) -> str:
+        """Unique identifier for the strategy."""
+        pass
+
+    @property
+    def supported_symbols(self) -> List[str]:
+        """List of symbols (e.g., 'BTCUSDT', 'EURUSD') this strategy can trade."""
+        pass
+
+    def initialize(self, config: Dict):
+        """Called once on strategy load."""
+        pass
+
+    def on_market_data(self, data: MarketData) -> Optional[TradeSignal]:
+        """Core logic. Called on each new bar/tick."""
+        pass
+
+    def on_signal_result(self, signal: TradeSignal, result: TradeResult):
+        """Callback for the result of a previously emitted signal (optional)."""
+        pass
+```
+
+### **6.2 Standardized Data Objects**
+*   `MarketData`: {timestamp, symbol, open, high, low, close, volume, list[indicators]}
+*   `AccountState`: {balance, equity, margin_used, list[Position]}
+*   `TradeSignal`: {action: Enum(BUY, SELL, HOLD), symbol: str, size: float, stop_loss: float, take_profit: float, confidence: float}
+*   `TradeResult`: {signal_id, fill_price, commission, pnl, status}
+
+## **7. Risk Management Framework**
+
+A hierarchical rule engine processed in the following order:
+1.  **Global Rules:** Daily loss limit, max leverage, emergency stop.
+2.  **Market Rules:** Max exposure per market, allowed symbols, market-specific hours.
+3.  **Strategy Rules:** Max allocation, max concurrent trades, drawdown limit for the strategy.
+4.  **Trade Rules:** Position sizing (fixed fractional, Kelly), stop-loss enforcement.
+
+The `RiskManager` is a **hard gatekeeper**; any signal failing a rule is rejected and logged.
+
+## **8. Security Requirements**
+
+*   **SEC-1:** Credentials (API keys, secrets) must be stored in an encrypted vault (e.g., `keyring`, HashiCorp Vault) or environment variables, never in plaintext config files or code.
+*   **SEC-2:** Broker API keys must use the most restrictive permissions possible (e.g., trade only, no withdrawal).
+*   **SEC-3:** All outgoing orders must be digitally signed by the adapter using the API secret.
+*   **SEC-4:** System must maintain an immutable audit log of all signals, risk checks, order submissions, and fills.
+*   **SEC-5:** UI/API must require authentication (local user/password or token).
+*   **SEC-6:** Development, Paper, and Live environments must be strictly isolated using separate broker API keys and configuration profiles.
+
+## **9. Legal & Compliance Considerations (High-Level)**
+
+*   **LEG-1:** For personal use, the user is solely responsible for understanding and complying with their local tax regulations on trading profits.
+*   **LEG-2:** The user must adhere to the Terms of Service of any integrated broker/exchange (e.g., API rate limits, prohibited trading practices).
+*   **LEG-3:** If shared or commercialized, clear disclaimers must state that trading financial instruments carries risk of loss and past performance is not indicative of future results.
+*   **LEG-4:** The system should not engage in activities that could be construed as market manipulation (e.g., spoofing, layering) – this is a strategy-level responsibility.
+*   **LEG-5:** User data (trades, balances) should be stored and processed with privacy in mind, preferably locally.
+
+## **10. Deployment & Infrastructure**
+
+*   Initial deployment is a **local application** (Docker Compose recommended) running on the user's machine.
+*   Components: Core Engine, PostgreSQL/QuestDB (for data), Redis (for caching/pub-sub), Web UI Server.
+*   Future commercial deployment would move to a cloud-based, containerized architecture (Kubernetes) with VPN connectivity to brokers.
+
+## **11. Development Roadmap (Phased)**
+
+**Phase 1: Foundation (Months 1-2)**
+*   Define core architecture, interfaces, and data models.
+*   Implement `Orchestrator`, `Strategy Engine` skeleton, and `Market Data Aggregator`.
+*   Develop one `IDataFeed` and one `IExecution` adapter for a single market (e.g., Crypto via Binance).
+*   Implement basic `Backtest Engine` with file-based historical data.
+
+**Phase 2: Core Trading Loop (Months 3-4)**
+*   Implement `Order Manager` and `Position Manager`.
+*   Develop the full `RiskManager` with basic rules.
+*   Enable **Advisory Mode** fully.
+*   Build first 2-3 example strategies implementing `IStrategy`.
+
+**Phase 3: Execution & Control (Months 5-6)**
+*   Enable **Operator Mode** with live paper trading.
+*   Implement `Circuit Breaker` and manual override.
+*   Develop basic **Web UI Dashboard** for monitoring and control.
+*   Add a second market adapter (Forex via OANDA).
+
+**Phase 4: Robustness & Scale (Months 7-8)**
+*   Enhance backtesting with walk-forward and Monte Carlo simulations.
+*   Implement comprehensive logging and audit trails.
+*   Add advanced risk metrics and reporting to UI.
+*   Finalize multi-market concurrent operation.
+
+**Phase 5: Future Extensions (Months 9+)**
+*   **AI News Engine Proof-of-Concept:** Design and integrate the pluggable AI module.
+*   **HFT Readiness:** Profile and optimize critical path latency. Evaluate messaging protocols (ZeroMQ).
+*   **Stocks Market Integration:** Add adapter for a stock brokerage API (e.g., Alpaca).
+*   **Commercial Features:** Multi-user support, billing, advanced reporting.
+
+---
+
+## **Appendices**
+
+*   **Appendix A:** Glossary of Terms
+*   **Appendix B:** Preliminary Technology Stack Recommendation (Python, FastAPI, React, PostgreSQL/QuestDB, Redis, Docker)
+*   **Appendix C:** Sample `TradeSignal` and `MarketData` JSON Schemas
+
+---
+**Document Approval:**
+
+*   **Product Owner:** [Your Name]
+*   **Lead Architect:** [TBD]
+*   **Development Lead:** [TBD]
