@@ -1,8 +1,21 @@
 """
 MMATS Application Layer
 
-This package contains application use cases and modes:
-- AdvisoryMode: Generate signals without execution
-- OperatorMode: Full automated trading
-- BacktestMode: Historical simulation
+Use cases and orchestration.
 """
+
+from src.application.backtest_engine import (
+    BacktestEngine,
+    BacktestConfig,
+    BacktestResult,
+    IndicatorCalculator,
+    print_backtest_report,
+)
+
+__all__ = [
+    "BacktestEngine",
+    "BacktestConfig",
+    "BacktestResult",
+    "IndicatorCalculator",
+    "print_backtest_report",
+]
